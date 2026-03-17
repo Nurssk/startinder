@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 
+import 'profile_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -163,7 +165,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _teamCard(String teamName) {
     const neonGreen = Color(0xFF8CF23C);
-
+    ElevatedButton(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        );
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: neonGreen, // background color
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+        ),
+      ),
+      child: const Text(
+        'Profile',
+        style: TextStyle(fontSize: 16),
+      ),
+    );
     return Container(
       width: 340,
       height: 480,
