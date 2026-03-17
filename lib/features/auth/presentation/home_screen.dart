@@ -42,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       position += const Offset(500, 0);
     });
-
     Future.delayed(const Duration(milliseconds: 300), nextCard);
   }
 
@@ -50,7 +49,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       position -= const Offset(500, 0);
     });
-
     Future.delayed(const Duration(milliseconds: 300), nextCard);
   }
 
@@ -81,7 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const SizedBox(height: 20),
 
-            // 🔥 TOP BAR
+            // ── Top Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
@@ -95,12 +93,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  // ✅ Fixed: navigate to Profile without signing out
                   IconButton(
                     icon: const Icon(Icons.person, color: neonGreen),
-                    onPressed: () async {
-                      await FirebaseAuth.instance.signOut();
-                      Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => ProfileScreen()));
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileScreen(),
+                        ),
+                      );
                     },
                   ),
                 ],
@@ -109,7 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
             const SizedBox(height: 30),
 
-            // 🔥 STACK
+            // ── Swipe Stack
             Expanded(
               child: teams.isEmpty
                   ? const Center(
@@ -148,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
             const SizedBox(height: 30),
 
-            // 🔥 BUTTONS
+            // ── Action Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -173,10 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(30),
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFF1A1C22),
-            Color(0xFF12141A),
-          ],
+          colors: [Color(0xFF1A1C22), Color(0xFF12141A)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -185,7 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: neonGreen.withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 5,
-          )
+          ),
         ],
       ),
       padding: const EdgeInsets.all(30),
@@ -228,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
             BoxShadow(
               color: color.withValues(alpha: 0.3),
               blurRadius: 25,
-            )
+            ),
           ],
         ),
         child: Icon(icon, color: color, size: 32),

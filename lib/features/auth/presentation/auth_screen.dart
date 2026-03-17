@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'home_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -12,6 +13,8 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+  final TextEditingController nameController =
+      TextEditingController(); // ✅ added
   bool isLogin = true;
   bool obscurePassword = true;
 
@@ -26,47 +29,99 @@ class _AuthScreenState extends State<AuthScreen> {
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
-      print("User logged in!");
     } catch (e) {
-      print("Login error: $e");
+      _showError("Login error: $e");
     }
   }
 
   // 🔥 REGISTER
   Future<void> register() async {
-    print("Register button pressed");
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final credential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
 
-      print("User registered!");
+      // ✅ Create Firestore user document right after registration
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(credential.user!.uid)
+          .set({
+        'fullName': nameController.text.trim(),
+        'email': emailController.text.trim(),
+        'bio': '',
+        'role': '',
+        'team': '',
+        'experience': '',
+        'portfolio': '',
+        'photoUrl': '',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
-      print("Register error: $e");
+      _showError("Register error: $e");
     }
   }
 
-  // 🔥 GOOGLE SIGN IN (работает для WEB)
+  // 🔥 GOOGLE SIGN IN
   Future<void> signInWithGoogle() async {
     try {
       final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+      final credential =
+          await FirebaseAuth.instance.signInWithPopup(googleProvider);
 
-      await FirebaseAuth.instance.signInWithPopup(googleProvider);
+      // ✅ Create Firestore doc for Google users if it doesn't exist yet
+      final uid = credential.user!.uid;
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
-      print("Signed in with Google!");
+      if (!doc.exists) {
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
+          'fullName': credential.user!.displayName ?? '',
+          'email': credential.user!.email ?? '',
+          'photoUrl': credential.user!.photoURL ?? '',
+          'bio': '',
+          'role': '',
+          'team': '',
+          'experience': '',
+          'portfolio': '',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
-      print("Google Sign-In Error: $e");
+      _showError("Google Sign-In Error: $e");
     }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: const TextStyle(color: Colors.black)),
+        backgroundColor: const Color(0xFF8CF23C),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    nameController.dispose();
+    super.dispose();
   }
 
   @override
@@ -110,19 +165,19 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 10),
                     const Text(
                       "Log in to manage your hackathon team",
-                      style: TextStyle(
-                        color: Colors.white54,
-                      ),
+                      style: TextStyle(color: Colors.white54),
                     ),
                     const SizedBox(height: 30),
 
-                    if (!isLogin)
+                    // Full Name — only on register
+                    if (!isLogin) ...[
                       _buildTextField(
+                        controller: nameController,
                         hint: "Full Name",
                         icon: Icons.person_outline,
                       ),
-
-                    if (!isLogin) const SizedBox(height: 16),
+                      const SizedBox(height: 16),
+                    ],
 
                     _buildTextField(
                       controller: emailController,
@@ -142,7 +197,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
                     const SizedBox(height: 30),
 
-                    // 🔥 MAIN BUTTON
+                    // Main button
                     SizedBox(
                       width: double.infinity,
                       height: 55,
@@ -173,7 +228,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
                     const SizedBox(height: 20),
 
-                    // 🔥 GOOGLE BUTTON
+                    // Google button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -208,9 +263,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           isLogin
                               ? "Don't have an account? Register"
                               : "Already have an account? Sign In",
-                          style: const TextStyle(
-                            color: neonGreen,
-                          ),
+                          style: const TextStyle(color: neonGreen),
                         ),
                       ),
                     ),
