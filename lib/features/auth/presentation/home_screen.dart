@@ -96,10 +96,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.logout, color: neonGreen),
+                    icon: const Icon(Icons.person, color: neonGreen),
                     onPressed: () async {
                       await FirebaseAuth.instance.signOut();
-                      Navigator.pop(context);
+                      Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => ProfileScreen()));
                     },
                   ),
                 ],
@@ -165,25 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _teamCard(String teamName) {
     const neonGreen = Color(0xFF8CF23C);
-    ElevatedButton(
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ProfileScreen()),
-        );
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: neonGreen, // background color
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-      ),
-      child: const Text(
-        'Profile',
-        style: TextStyle(fontSize: 16),
-      ),
-    );
+
     return Container(
       width: 340,
       height: 480,
