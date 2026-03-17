@@ -1,4 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+```
+
+And go to **Firebase Console → Storage → Rules** and set:
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/profile.jpg {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
     <application
         android:label="start"
         android:name="${applicationName}"

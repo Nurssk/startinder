@@ -20,11 +20,10 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      // ✅ Auth state listener — no more manual navigation
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
-          // Still waiting for Firebase to restore session
+          // ── Still connecting
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               backgroundColor: Color(0xFF0E0F12),
@@ -35,11 +34,11 @@ class MyApp extends StatelessWidget {
               ),
             );
           }
-          // User is logged in → go to HomeScreen
-          if (snapshot.hasData) {
+          // ── Logged in
+          if (snapshot.hasData && snapshot.data != null) {
             return const ProfileScreen();
           }
-          // Not logged in → go to AuthScreen
+          // ── Logged out → AuthScreen
           return const AuthScreen();
         },
       ),

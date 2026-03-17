@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
-
 import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -12,14 +12,48 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<String> teams = [
-    "AI Hackers",
-    "Flutter Ninjas",
-    "Cyber Squad",
-  ];
+  static const backgroundColor = Color(0xFF0E0F12);
+  static const cardColor = Color(0xFF1A1C22);
+  static const neonGreen = Color(0xFF8CF23C);
+  static const fieldColor = Color(0xFF12141A);
+
+  List<Map<String, dynamic>> _users = [];
+  bool _isLoading = true;
 
   Offset position = Offset.zero;
   double angle = 0;
+
+  final currentUser = FirebaseAuth.instance.currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where(FieldPath.documentId,
+              isNotEqualTo: currentUser?.uid) // ✅ exclude yourself
+          .get();
+
+      final users = snapshot.docs
+          .map((doc) => {'uid': doc.id, ...doc.data()})
+          .where((u) => (u['fullName'] ?? '')
+              .toString()
+              .isNotEmpty) // skip empty profiles
+          .toList();
+
+      setState(() {
+        _users = users;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
 
   void onPanUpdate(DragUpdateDetails details) {
     setState(() {
@@ -39,22 +73,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void swipeRight() {
-    setState(() {
-      position += const Offset(500, 0);
-    });
+    setState(() => position += const Offset(600, 0));
     Future.delayed(const Duration(milliseconds: 300), nextCard);
   }
 
   void swipeLeft() {
-    setState(() {
-      position -= const Offset(500, 0);
-    });
+    setState(() => position -= const Offset(600, 0));
     Future.delayed(const Duration(milliseconds: 300), nextCard);
   }
 
   void nextCard() {
     setState(() {
-      teams.removeLast();
+      if (_users.isNotEmpty) _users.removeLast();
       position = Offset.zero;
       angle = 0;
     });
@@ -69,9 +99,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const backgroundColor = Color(0xFF0E0F12);
-    const neonGreen = Color(0xFF8CF23C);
-
     return Scaffold(
       backgroundColor: backgroundColor,
       body: SafeArea(
@@ -85,153 +112,486 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "Discover Teams",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  // ✅ Fixed: navigate to Profile without signing out
-                  IconButton(
-                    icon: const Icon(Icons.person, color: neonGreen),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ProfileScreen(),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Discover",
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 13,
+                          letterSpacing: 2,
                         ),
-                      );
-                    },
+                      ),
+                      const Text(
+                        "Teammates",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          height: 1.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      // Refresh button
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _isLoading = true);
+                          _loadUsers();
+                        },
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.refresh,
+                              color: Colors.white54, size: 20),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Profile button
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ProfileScreen()),
+                        ),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: neonGreen, width: 1.5),
+                          ),
+                          child: const Icon(Icons.person,
+                              color: neonGreen, size: 20),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
 
-            // ── Swipe Stack
+            // ── Card Stack
             Expanded(
-              child: teams.isEmpty
+              child: _isLoading
                   ? const Center(
-                      child: Text(
-                        "No more teams",
-                        style: TextStyle(color: Colors.white54),
-                      ),
+                      child: CircularProgressIndicator(color: neonGreen),
                     )
-                  : Stack(
-                      alignment: Alignment.center,
-                      children: teams.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final team = entry.value;
+                  : _users.isEmpty
+                      ? _buildEmptyState()
+                      : Stack(
+                          alignment: Alignment.center,
+                          children: _users.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final user = entry.value;
+                            final isTop = index == _users.length - 1;
 
-                        if (index == teams.length - 1) {
-                          return GestureDetector(
-                            onPanUpdate: onPanUpdate,
-                            onPanEnd: onPanEnd,
-                            child: Transform.translate(
-                              offset: position,
-                              child: Transform.rotate(
-                                angle: angle,
-                                child: _teamCard(team),
+                            if (isTop) {
+                              // ── Swipe overlay color
+                              final swipeProgress =
+                                  (position.dx / 150).clamp(-1.0, 1.0);
+
+                              return GestureDetector(
+                                onPanUpdate: onPanUpdate,
+                                onPanEnd: onPanEnd,
+                                child: Transform.translate(
+                                  offset: position,
+                                  child: Transform.rotate(
+                                    angle: angle,
+                                    child: Stack(
+                                      children: [
+                                        _buildUserCard(user),
+                                        // ✅ Like overlay
+                                        if (swipeProgress > 0.1)
+                                          Positioned(
+                                            top: 30,
+                                            left: 30,
+                                            child: _buildSwipeLabel(
+                                              "INVITE",
+                                              neonGreen,
+                                              swipeProgress,
+                                            ),
+                                          ),
+                                        // ✅ Nope overlay
+                                        if (swipeProgress < -0.1)
+                                          Positioned(
+                                            top: 30,
+                                            right: 30,
+                                            child: _buildSwipeLabel(
+                                              "SKIP",
+                                              Colors.redAccent,
+                                              -swipeProgress,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            // Background cards
+                            final scale =
+                                1.0 - ((_users.length - 1 - index) * 0.04);
+                            final offset = (_users.length - 1 - index) * 8.0;
+
+                            return Transform.translate(
+                              offset: Offset(0, offset),
+                              child: Transform.scale(
+                                scale: scale,
+                                child: _buildUserCard(user),
                               ),
-                            ),
-                          );
-                        } else {
-                          return Transform.scale(
-                            scale: 0.95,
-                            child: _teamCard(team),
-                          );
-                        }
-                      }).toList(),
-                    ),
+                            );
+                          }).toList(),
+                        ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 20),
 
-            // ── Action Buttons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _circleButton(Icons.close, Colors.red, swipeLeft),
-                _circleButton(Icons.favorite, neonGreen, swipeRight),
-              ],
-            ),
-
-            const SizedBox(height: 40),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _teamCard(String teamName) {
-    const neonGreen = Color(0xFF8CF23C);
-
-    return Container(
-      width: 340,
-      height: 480,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A1C22), Color(0xFF12141A)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: neonGreen.withValues(alpha: 0.2),
-            blurRadius: 40,
-            spreadRadius: 5,
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(30),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Icon(Icons.groups, size: 100, color: neonGreen),
-          Column(
-            children: [
-              Text(
-                teamName,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
+            // ── Swipe hint text
+            if (!_isLoading && _users.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  "${_users.length} teammate${_users.length == 1 ? '' : 's'} to discover",
+                  style: const TextStyle(
+                      color: Colors.white38, fontSize: 12, letterSpacing: 0.5),
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                "Looking for UI Designer",
-                style: TextStyle(color: Colors.white54),
+
+            // ── Action Buttons
+            if (!_isLoading && _users.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _circleButton(
+                        Icons.close_rounded, Colors.redAccent, swipeLeft,
+                        label: "Skip"),
+                    _circleButton(Icons.favorite_rounded, neonGreen, swipeRight,
+                        label: "Invite"),
+                  ],
+                ),
               ),
-            ],
+
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Rich User Card
+  Widget _buildUserCard(Map<String, dynamic> user) {
+    final name = user['fullName'] ?? 'Unknown';
+    final role = user['role'] ?? '';
+    final team = user['team'] ?? '';
+    final bio = user['bio'] ?? '';
+    final experience = user['experience'] ?? '';
+    final portfolio = user['portfolio'] ?? '';
+    final photoUrl = user['photoUrl'] ?? '';
+
+    return Container(
+      width: 320,
+      height: 500,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
+        color: cardColor,
+        boxShadow: [
+          BoxShadow(
+            color: neonGreen.withValues(alpha: 0.08),
+            blurRadius: 40,
+            spreadRadius: 2,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: Column(
+          children: [
+            // ── Photo / Header
+            Container(
+              height: 180,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: fieldColor,
+                image: photoUrl.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(photoUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: Stack(
+                children: [
+                  // Gradient overlay on photo
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            cardColor.withValues(alpha: 0.95),
+                          ],
+                          stops: const [0.4, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Placeholder icon if no photo
+                  if (photoUrl.isEmpty)
+                    Center(
+                      child: Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: backgroundColor,
+                          border: Border.all(color: neonGreen, width: 2),
+                        ),
+                        child: const Icon(Icons.person,
+                            color: Colors.white38, size: 36),
+                      ),
+                    ),
+                  // Name + role pinned to bottom of header
+                  Positioned(
+                    bottom: 12,
+                    left: 20,
+                    right: 20,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            height: 1.1,
+                          ),
+                        ),
+                        if (role.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: neonGreen.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: neonGreen.withValues(alpha: 0.4),
+                                  width: 1),
+                            ),
+                            child: Text(
+                              role,
+                              style: const TextStyle(
+                                color: neonGreen,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Card Body
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Team badge
+                    if (team.isNotEmpty)
+                      _buildInfoRow(Icons.group_outlined, team),
+
+                    if (bio.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        bio,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+
+                    const Spacer(),
+
+                    // ── Bottom info chips
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (experience.isNotEmpty)
+                          _buildChip(Icons.work_outline, experience),
+                        if (portfolio.isNotEmpty)
+                          _buildChip(Icons.link_rounded, "Portfolio"),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white38, size: 14),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white12, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white38, size: 12),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _circleButton(IconData icon, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
+  Widget _buildSwipeLabel(String text, Color color, double opacity) {
+    return Opacity(
+      opacity: opacity.clamp(0.0, 1.0),
       child: Container(
-        height: 70,
-        width: 70,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: const Color(0xFF1A1C22),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.3),
-              blurRadius: 25,
-            ),
-          ],
+          border: Border.all(color: color, width: 2.5),
+          borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: color, size: 32),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: color,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+          ),
+        ),
       ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: cardColor,
+              border:
+                  Border.all(color: neonGreen.withValues(alpha: 0.3), width: 2),
+            ),
+            child: const Icon(Icons.people_outline,
+                color: Colors.white38, size: 36),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            "No teammates yet",
+            style: TextStyle(
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Invite others to join the hackathon",
+            style: TextStyle(color: Colors.white38, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _circleButton(IconData icon, Color color, VoidCallback onTap,
+      {required String label}) {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            height: 64,
+            width: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: cardColor,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.25),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                ),
+              ],
+              border:
+                  Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white38, fontSize: 11, letterSpacing: 0.5)),
+      ],
     );
   }
 }
