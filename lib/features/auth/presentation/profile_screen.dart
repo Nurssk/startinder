@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:typed_data';
 import 'home_screen.dart';
 import 'auth_screen.dart';
 
@@ -20,7 +21,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const neonGreen = Color(0xFF8CF23C);
   static const fieldColor = Color(0xFF12141A);
 
-  final user = FirebaseAuth.instance.currentUser;
+  // ✅ Getter instead of final field — always fresh, never stale
+  User? get user => FirebaseAuth.instance.currentUser;
 
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
@@ -35,7 +37,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isUploadingPhoto = false;
 
   String _photoUrl = '';
-  int _photoCacheBuster = 0; // ✅ forces image reload after upload
+  int _photoCacheBuster = 0;
+  Uint8List? _localImageBytes;
 
   @override
   void dispose() {
@@ -49,6 +52,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _populateControllers(Map<String, dynamic> data) {
+    final newPhotoUrl = data['photoUrl'] ?? '';
+
+    if (newPhotoUrl != _photoUrl && _localImageBytes == null) {
+      _photoUrl = newPhotoUrl;
+    }
+
     if (_controllersPopulated) return;
     _nameController.text = data['fullName'] ?? '';
     _bioController.text = data['bio'] ?? '';
@@ -56,11 +65,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _teamController.text = data['team'] ?? '';
     _experienceController.text = data['experience'] ?? '';
     _portfolioController.text = data['portfolio'] ?? '';
-    _photoUrl = data['photoUrl'] ?? '';
+    _photoUrl = newPhotoUrl;
     _controllersPopulated = true;
   }
 
   Future<void> _pickAndUploadPhoto() async {
+    // ✅ Use getter — never null
+    final uid = user?.uid;
+    if (uid == null) {
+      _showSnack("Not logged in");
+      return;
+    }
+
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
@@ -69,14 +85,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (picked == null) return;
 
-    setState(() => _isUploadingPhoto = true);
+    final bytes = await picked.readAsBytes();
+
+    setState(() {
+      _localImageBytes = bytes;
+      _isUploadingPhoto = true;
+    });
 
     try {
-      final bytes = await picked.readAsBytes();
-
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('users/${user!.uid}/profile.jpg');
+      final ref =
+          FirebaseStorage.instance.ref().child('users/$uid/profile.jpg');
 
       final uploadTask = await ref.putData(
         bytes,
@@ -87,26 +105,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(user!.uid)
-          .update({'photoUrl': url});
+          .doc(uid)
+          .set({'photoUrl': url}, SetOptions(merge: true));
 
       setState(() {
         _photoUrl = url;
-        _photoCacheBuster++; // ✅ bust cache so new image loads immediately
+        _photoCacheBuster++;
+        _controllersPopulated = false;
+        _localImageBytes = null;
       });
+
       _showSnack("Photo updated!");
     } catch (e) {
       _showSnack("Upload failed: $e");
+      setState(() => _localImageBytes = null);
     } finally {
       setState(() => _isUploadingPhoto = false);
     }
   }
 
   Future<void> _saveProfile() async {
-    if (user == null) return;
+    final uid = user?.uid;
+    if (uid == null) return;
+
     setState(() => _isSaving = true);
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user!.uid).set({
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'fullName': _nameController.text.trim(),
         'bio': _bioController.text.trim(),
         'role': _roleController.text.trim(),
@@ -114,13 +138,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'experience': _experienceController.text.trim(),
         'portfolio': _portfolioController.text.trim(),
         'photoUrl': _photoUrl,
-        'email': user!.email ?? '',
+        'email': user?.email ?? '',
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       setState(() {
         _isEditing = false;
         _controllersPopulated = false;
+        _localImageBytes = null;
       });
       _showSnack("Profile saved!");
     } catch (e) {
@@ -142,10 +167,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildAvatar() {
-    // ✅ Append cache buster to URL so Flutter fetches fresh image
-    final imageUrl =
-        _photoUrl.isNotEmpty ? '$_photoUrl&bust=$_photoCacheBuster' : '';
-
     return GestureDetector(
       onTap: _isEditing ? _pickAndUploadPhoto : null,
       child: SizedBox(
@@ -153,7 +174,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         height: 112,
         child: Stack(
           children: [
-            // ── Neon ring
             Container(
               width: 112,
               height: 112,
@@ -162,55 +182,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 border: Border.all(color: neonGreen, width: 2.5),
               ),
             ),
-
-            // ── Avatar with CachedNetworkImage for fast loads
             Center(
               child: ClipOval(
-                child: imageUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: imageUrl,
+                child: _localImageBytes != null
+                    ? Image.memory(
+                        _localImageBytes!,
                         width: 100,
                         height: 100,
                         fit: BoxFit.cover,
-                        // ✅ Spinner while downloading
-                        placeholder: (context, url) => Container(
-                          width: 100,
-                          height: 100,
-                          color: fieldColor,
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              color: neonGreen,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                        ),
-                        // ✅ Fallback icon if load fails
-                        errorWidget: (context, url, error) => Container(
-                          width: 100,
-                          height: 100,
-                          color: fieldColor,
-                          child: const Icon(Icons.person,
-                              color: Colors.white54, size: 40),
-                        ),
                       )
-                    : Container(
-                        width: 100,
-                        height: 100,
-                        color: fieldColor,
-                        child: const Icon(Icons.person,
-                            color: Colors.white54, size: 40),
-                      ),
+                    : _photoUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: '$_photoUrl&bust=$_photoCacheBuster',
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              width: 100,
+                              height: 100,
+                              color: fieldColor,
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: neonGreen,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              width: 100,
+                              height: 100,
+                              color: fieldColor,
+                              child: const Icon(Icons.person,
+                                  color: Colors.white54, size: 40),
+                            ),
+                          )
+                        : Container(
+                            width: 100,
+                            height: 100,
+                            color: fieldColor,
+                            child: const Icon(Icons.person,
+                                color: Colors.white54, size: 40),
+                          ),
               ),
             ),
-
-            // ── Upload spinner overlay
             if (_isUploadingPhoto)
               Container(
                 width: 112,
                 height: 112,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.black.withOpacity(0.6),
+                  color: Colors.black.withOpacity(0.5),
                 ),
                 child: const Center(
                   child: CircularProgressIndicator(
@@ -219,8 +240,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
-
-            // ── Camera badge in edit mode
             if (_isEditing && !_isUploadingPhoto)
               Positioned(
                 bottom: 2,
@@ -277,6 +296,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onPressed: () => setState(() {
                 _isEditing = false;
                 _controllersPopulated = false;
+                _localImageBytes = null;
               }),
               child:
                   const Text("Cancel", style: TextStyle(color: Colors.white54)),
@@ -326,9 +346,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 30),
-
                   _buildAvatar(),
-
                   if (_isEditing) ...[
                     const SizedBox(height: 8),
                     const Text(
@@ -336,9 +354,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: TextStyle(color: Colors.white38, fontSize: 12),
                     ),
                   ],
-
                   const SizedBox(height: 16),
-
                   Text(
                     _nameController.text.isNotEmpty
                         ? _nameController.text
@@ -353,9 +369,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     user?.email ?? '',
                     style: const TextStyle(color: Colors.white54, fontSize: 14),
                   ),
-
                   const SizedBox(height: 30),
-
                   if (_isEditing) ...[
                     _buildSection("Personal Info", [
                       _buildField(
@@ -397,10 +411,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           _portfolioController.text),
                     ]),
                   ],
-
                   const SizedBox(height: 30),
-
-                  // Save / Edit button
                   SizedBox(
                     width: double.infinity,
                     height: 55,
@@ -438,10 +449,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
-                  // Sign Out
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -467,7 +475,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 40),
                 ],
               ),
