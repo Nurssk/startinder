@@ -13,8 +13,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController nameController =
-      TextEditingController(); // ✅ added
+  final TextEditingController nameController = TextEditingController();
   bool isLogin = true;
   bool obscurePassword = true;
 
@@ -43,7 +42,6 @@ class _AuthScreenState extends State<AuthScreen> {
         password: passwordController.text.trim(),
       );
 
-      // ✅ Create Firestore user document right after registration
       await FirebaseFirestore.instance
           .collection('users')
           .doc(credential.user!.uid)
@@ -75,7 +73,6 @@ class _AuthScreenState extends State<AuthScreen> {
       final credential =
           await FirebaseAuth.instance.signInWithPopup(googleProvider);
 
-      // ✅ Create Firestore doc for Google users if it doesn't exist yet
       final uid = credential.user!.uid;
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
@@ -100,6 +97,22 @@ class _AuthScreenState extends State<AuthScreen> {
       );
     } catch (e) {
       _showError("Google Sign-In Error: $e");
+    }
+  }
+
+  // ✅ FORGOT PASSWORD
+  Future<void> _forgotPassword() async {
+    if (emailController.text.trim().isEmpty) {
+      _showError("Please enter your email first");
+      return;
+    }
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: emailController.text.trim(),
+      );
+      _showError("✅ Password reset email sent! Check your inbox.");
+    } catch (e) {
+      _showError("Error: $e");
     }
   }
 
@@ -137,11 +150,7 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(
             children: [
               const SizedBox(height: 60),
-              const Icon(
-                Icons.login,
-                size: 80,
-                color: neonGreen,
-              ),
+              const Icon(Icons.login, size: 80, color: neonGreen),
               const SizedBox(height: 40),
               Container(
                 padding: const EdgeInsets.all(24),
@@ -169,7 +178,6 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: 30),
 
-                    // Full Name — only on register
                     if (!isLogin) ...[
                       _buildTextField(
                         controller: nameController,
@@ -195,7 +203,30 @@ class _AuthScreenState extends State<AuthScreen> {
                       isPassword: true,
                     ),
 
-                    const SizedBox(height: 30),
+                    // ✅ Forgot password — only on login
+                    if (isLogin) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _forgotPassword,
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            "Forgot Password?",
+                            style: TextStyle(
+                              color: Colors.white38,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
 
                     // Main button
                     SizedBox(
@@ -252,13 +283,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
                     const SizedBox(height: 20),
 
+                    // ✅ Toggle login/register
                     Center(
                       child: TextButton(
-                        onPressed: () {
-                          setState(() {
-                            isLogin = !isLogin;
-                          });
-                        },
+                        onPressed: () => setState(() => isLogin = !isLogin),
                         child: Text(
                           isLogin
                               ? "Don't have an account? Register"
@@ -302,11 +330,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   obscurePassword ? Icons.visibility_off : Icons.visibility,
                   color: Colors.white54,
                 ),
-                onPressed: () {
-                  setState(() {
-                    obscurePassword = !obscurePassword;
-                  });
-                },
+                onPressed: () =>
+                    setState(() => obscurePassword = !obscurePassword),
               )
             : null,
         border: OutlineInputBorder(

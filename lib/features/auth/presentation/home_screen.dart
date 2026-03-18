@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
 import 'profile_screen.dart';
+import 'matches_screen.dart';
+import 'chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Offset position = Offset.zero;
   double angle = 0;
 
-  final currentUser = FirebaseAuth.instance.currentUser;
+  // ✅ Getter — always fresh
+  User? get currentUser => FirebaseAuth.instance.currentUser;
 
   @override
   void initState() {
@@ -33,17 +36,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadUsers() async {
     try {
+      final uid = currentUser?.uid;
+      if (uid == null) return;
+
+      // ✅ Exclude users already swiped on
+      final swipesSnap = await FirebaseFirestore.instance
+          .collection('swipes')
+          .where('from', isEqualTo: uid)
+          .get();
+
+      final alreadySwiped =
+          swipesSnap.docs.map((d) => d['to'] as String).toSet();
+
       final snapshot = await FirebaseFirestore.instance
           .collection('users')
-          .where(FieldPath.documentId,
-              isNotEqualTo: currentUser?.uid) // ✅ exclude yourself
+          .where(FieldPath.documentId, isNotEqualTo: uid)
           .get();
 
       final users = snapshot.docs
           .map((doc) => {'uid': doc.id, ...doc.data()})
-          .where((u) => (u['fullName'] ?? '')
-              .toString()
-              .isNotEmpty) // skip empty profiles
+          .where((u) =>
+              (u['fullName'] ?? '').toString().isNotEmpty &&
+              !alreadySwiped.contains(u['uid']))
           .toList();
 
       setState(() {
@@ -73,13 +87,189 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void swipeRight() {
+    if (_users.isEmpty) return;
+    final swipedUser = _users.last;
     setState(() => position += const Offset(600, 0));
-    Future.delayed(const Duration(milliseconds: 300), nextCard);
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _handleSwipeRight(swipedUser);
+      nextCard();
+    });
   }
 
   void swipeLeft() {
+    if (_users.isEmpty) return;
+    final swipedUser = _users.last;
     setState(() => position -= const Offset(600, 0));
-    Future.delayed(const Duration(milliseconds: 300), nextCard);
+    Future.delayed(const Duration(milliseconds: 300), () {
+      _handleSwipeLeft(swipedUser);
+      nextCard();
+    });
+  }
+
+  Future<void> _handleSwipeLeft(Map<String, dynamic> swipedUser) async {
+    final uid = currentUser?.uid;
+    final swipedUid = swipedUser['uid'];
+    if (uid == null || swipedUid == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('swipes')
+        .doc('${uid}_$swipedUid')
+        .set({
+      'from': uid,
+      'to': swipedUid,
+      'direction': 'left',
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _handleSwipeRight(Map<String, dynamic> swipedUser) async {
+    final uid = currentUser?.uid;
+    final swipedUid = swipedUser['uid'];
+    if (uid == null || swipedUid == null) return;
+
+    // ✅ Save right swipe
+    await FirebaseFirestore.instance
+        .collection('swipes')
+        .doc('${uid}_$swipedUid')
+        .set({
+      'from': uid,
+      'to': swipedUid,
+      'direction': 'right',
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    // ✅ Check mutual swipe
+    final mutualSwipe = await FirebaseFirestore.instance
+        .collection('swipes')
+        .doc('${swipedUid}_$uid')
+        .get();
+
+    final isMutual =
+        mutualSwipe.exists && mutualSwipe.data()?['direction'] == 'right';
+
+    if (isMutual) {
+      final matchId = uid.compareTo(swipedUid) < 0
+          ? '${uid}_$swipedUid'
+          : '${swipedUid}_$uid';
+
+      // ✅ Create match document
+      await FirebaseFirestore.instance.collection('matches').doc(matchId).set({
+        'users': [uid, swipedUid],
+        'timestamp': FieldValue.serverTimestamp(),
+        'lastMessage': '🎉 You matched!',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+      });
+
+      // ✅ Auto first message
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(matchId)
+          .collection('messages')
+          .add({
+        'text':
+            '🎉 You matched! Say hello and start building something amazing together.',
+        'senderId': 'system',
+        'senderName': 'System',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) _showMatchDialog(swipedUser, matchId);
+    }
+  }
+
+  void _showMatchDialog(Map<String, dynamic> matchedUser, String matchId) {
+    final name = matchedUser['fullName'] ?? 'Someone';
+    final role = matchedUser['role'] ?? '';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        backgroundColor: cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: neonGreen.withOpacity(0.1),
+                  border: Border.all(color: neonGreen, width: 2),
+                ),
+                child: const Icon(Icons.favorite, color: neonGreen, size: 40),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "It's a Match! 🎉",
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "You and $name both want to team up!",
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
+              ),
+              if (role.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  role,
+                  style: const TextStyle(
+                      color: neonGreen,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+              const SizedBox(height: 24),
+              // ✅ Open chat button
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: neonGreen,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatScreen(
+                          matchId: matchId,
+                          otherUserName: name,
+                          otherUid: matchedUser['uid'],
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    "Send Message",
+                    style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Keep Swiping",
+                    style: TextStyle(color: Colors.white54)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void nextCard() {
@@ -114,8 +304,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
+                    children: const [
+                      Text(
                         "Discover",
                         style: TextStyle(
                           color: Colors.white54,
@@ -123,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           letterSpacing: 2,
                         ),
                       ),
-                      const Text(
+                      Text(
                         "Teammates",
                         style: TextStyle(
                           color: Colors.white,
@@ -136,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   Row(
                     children: [
-                      // Refresh button
+                      // ── Refresh button
                       GestureDetector(
                         onTap: () {
                           setState(() => _isLoading = true);
@@ -154,7 +344,57 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      // Profile button
+
+                      // ✅ Chat / Matches button with green dot badge
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const MatchesScreen()),
+                        ),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: StreamBuilder<QuerySnapshot>(
+                            stream: FirebaseFirestore.instance
+                                .collection('matches')
+                                .where('users', arrayContains: currentUser?.uid)
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              final hasMatches = snapshot.hasData &&
+                                  snapshot.data!.docs.isNotEmpty;
+                              return Stack(
+                                children: [
+                                  const Center(
+                                    child: Icon(Icons.chat_bubble_outline,
+                                        color: Colors.white54, size: 20),
+                                  ),
+                                  if (hasMatches)
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: neonGreen,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // ── Profile button
                       GestureDetector(
                         onTap: () => Navigator.push(
                           context,
@@ -197,7 +437,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             final isTop = index == _users.length - 1;
 
                             if (isTop) {
-                              // ── Swipe overlay color
                               final swipeProgress =
                                   (position.dx / 150).clamp(-1.0, 1.0);
 
@@ -211,7 +450,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: Stack(
                                       children: [
                                         _buildUserCard(user),
-                                        // ✅ Like overlay
                                         if (swipeProgress > 0.1)
                                           Positioned(
                                             top: 30,
@@ -222,7 +460,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                               swipeProgress,
                                             ),
                                           ),
-                                        // ✅ Nope overlay
                                         if (swipeProgress < -0.1)
                                           Positioned(
                                             top: 30,
@@ -240,7 +477,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               );
                             }
 
-                            // Background cards
                             final scale =
                                 1.0 - ((_users.length - 1 - index) * 0.04);
                             final offset = (_users.length - 1 - index) * 8.0;
@@ -258,7 +494,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
             const SizedBox(height: 20),
 
-            // ── Swipe hint text
             if (!_isLoading && _users.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -269,7 +504,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-            // ── Action Buttons
             if (!_isLoading && _users.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -292,7 +526,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Rich User Card
   Widget _buildUserCard(Map<String, dynamic> user) {
     final name = user['fullName'] ?? 'Unknown';
     final role = user['role'] ?? '';
@@ -321,7 +554,6 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(32),
         child: Column(
           children: [
-            // ── Photo / Header
             Container(
               height: 180,
               width: double.infinity,
@@ -336,7 +568,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: Stack(
                 children: [
-                  // Gradient overlay on photo
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -352,7 +583,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                  // Placeholder icon if no photo
                   if (photoUrl.isEmpty)
                     Center(
                       child: Container(
@@ -367,7 +597,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: Colors.white38, size: 36),
                       ),
                     ),
-                  // Name + role pinned to bottom of header
                   Positioned(
                     bottom: 12,
                     left: 20,
@@ -413,18 +642,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-
-            // ── Card Body
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Team badge
                     if (team.isNotEmpty)
                       _buildInfoRow(Icons.group_outlined, team),
-
                     if (bio.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       Text(
@@ -438,10 +663,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ],
-
                     const Spacer(),
-
-                    // ── Bottom info chips
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -471,10 +693,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Text(
             text,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white54,
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: Colors.white54, fontSize: 13),
           ),
         ),
       ],

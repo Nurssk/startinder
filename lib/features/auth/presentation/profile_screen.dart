@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:typed_data';
 import 'home_screen.dart';
 import 'auth_screen.dart';
 
@@ -21,7 +17,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const neonGreen = Color(0xFF8CF23C);
   static const fieldColor = Color(0xFF12141A);
 
-  // ✅ Getter instead of final field — always fresh, never stale
   User? get user => FirebaseAuth.instance.currentUser;
 
   final _nameController = TextEditingController();
@@ -34,11 +29,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isSaving = false;
   bool _isEditing = false;
   bool _controllersPopulated = false;
-  bool _isUploadingPhoto = false;
-
-  String _photoUrl = '';
-  int _photoCacheBuster = 0;
-  Uint8List? _localImageBytes;
 
   @override
   void dispose() {
@@ -52,12 +42,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _populateControllers(Map<String, dynamic> data) {
-    final newPhotoUrl = data['photoUrl'] ?? '';
-
-    if (newPhotoUrl != _photoUrl && _localImageBytes == null) {
-      _photoUrl = newPhotoUrl;
-    }
-
     if (_controllersPopulated) return;
     _nameController.text = data['fullName'] ?? '';
     _bioController.text = data['bio'] ?? '';
@@ -65,69 +49,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _teamController.text = data['team'] ?? '';
     _experienceController.text = data['experience'] ?? '';
     _portfolioController.text = data['portfolio'] ?? '';
-    _photoUrl = newPhotoUrl;
     _controllersPopulated = true;
-  }
-
-  Future<void> _pickAndUploadPhoto() async {
-    // ✅ Use getter — never null
-    final uid = user?.uid;
-    if (uid == null) {
-      _showSnack("Not logged in");
-      return;
-    }
-
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-      maxWidth: 512,
-    );
-    if (picked == null) return;
-
-    final bytes = await picked.readAsBytes();
-
-    setState(() {
-      _localImageBytes = bytes;
-      _isUploadingPhoto = true;
-    });
-
-    try {
-      final ref =
-          FirebaseStorage.instance.ref().child('users/$uid/profile.jpg');
-
-      final uploadTask = await ref.putData(
-        bytes,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-
-      final url = await uploadTask.ref.getDownloadURL();
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .set({'photoUrl': url}, SetOptions(merge: true));
-
-      setState(() {
-        _photoUrl = url;
-        _photoCacheBuster++;
-        _controllersPopulated = false;
-        _localImageBytes = null;
-      });
-
-      _showSnack("Photo updated!");
-    } catch (e) {
-      _showSnack("Upload failed: $e");
-      setState(() => _localImageBytes = null);
-    } finally {
-      setState(() => _isUploadingPhoto = false);
-    }
   }
 
   Future<void> _saveProfile() async {
     final uid = user?.uid;
     if (uid == null) return;
-
     setState(() => _isSaving = true);
     try {
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
@@ -137,7 +64,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'team': _teamController.text.trim(),
         'experience': _experienceController.text.trim(),
         'portfolio': _portfolioController.text.trim(),
-        'photoUrl': _photoUrl,
         'email': user?.email ?? '',
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -145,7 +71,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _isEditing = false;
         _controllersPopulated = false;
-        _localImageBytes = null;
       });
       _showSnack("Profile saved!");
     } catch (e) {
@@ -166,99 +91,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ✅ Simple avatar — no photo upload
   Widget _buildAvatar() {
-    return GestureDetector(
-      onTap: _isEditing ? _pickAndUploadPhoto : null,
-      child: SizedBox(
-        width: 112,
-        height: 112,
-        child: Stack(
-          children: [
-            Container(
-              width: 112,
-              height: 112,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: neonGreen, width: 2.5),
-              ),
-            ),
-            Center(
-              child: ClipOval(
-                child: _localImageBytes != null
-                    ? Image.memory(
-                        _localImageBytes!,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      )
-                    : _photoUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: '$_photoUrl&bust=$_photoCacheBuster',
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              width: 100,
-                              height: 100,
-                              color: fieldColor,
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  color: neonGreen,
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              width: 100,
-                              height: 100,
-                              color: fieldColor,
-                              child: const Icon(Icons.person,
-                                  color: Colors.white54, size: 40),
-                            ),
-                          )
-                        : Container(
-                            width: 100,
-                            height: 100,
-                            color: fieldColor,
-                            child: const Icon(Icons.person,
-                                color: Colors.white54, size: 40),
-                          ),
-              ),
-            ),
-            if (_isUploadingPhoto)
-              Container(
-                width: 112,
-                height: 112,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black.withOpacity(0.5),
-                ),
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: neonGreen,
-                    strokeWidth: 2.5,
-                  ),
-                ),
-              ),
-            if (_isEditing && !_isUploadingPhoto)
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: neonGreen,
-                    border: Border.all(color: backgroundColor, width: 2),
-                  ),
-                  child: const Icon(Icons.camera_alt,
-                      color: Colors.black, size: 16),
-                ),
-              ),
-          ],
-        ),
+    return Container(
+      width: 112,
+      height: 112,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: neonGreen, width: 2.5),
+        color: fieldColor,
       ),
+      child: const Icon(Icons.person, color: Colors.white54, size: 48),
     );
   }
 
@@ -277,13 +120,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: backgroundColor,
         centerTitle: true,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.home, color: neonGreen),
-          onPressed: () => Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-          ),
-        ),
         title: const Text(
           "Profile",
           style: TextStyle(
@@ -296,7 +132,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onPressed: () => setState(() {
                 _isEditing = false;
                 _controllersPopulated = false;
-                _localImageBytes = null;
               }),
               child:
                   const Text("Cancel", style: TextStyle(color: Colors.white54)),
@@ -330,7 +165,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             FirebaseFirestore.instance.collection('users').doc(user!.uid).set({
               'fullName': user!.displayName ?? '',
               'email': user!.email ?? '',
-              'photoUrl': user!.photoURL ?? '',
               'bio': '',
               'role': '',
               'team': '',
@@ -347,13 +181,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   const SizedBox(height: 30),
                   _buildAvatar(),
-                  if (_isEditing) ...[
-                    const SizedBox(height: 8),
-                    const Text(
-                      "Tap photo to change",
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                  ],
                   const SizedBox(height: 16),
                   Text(
                     _nameController.text.isNotEmpty
