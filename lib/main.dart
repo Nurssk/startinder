@@ -10,7 +10,7 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  // ✅ NO seed here — user not authenticated yet
+
   runApp(const MyApp());
 }
 
