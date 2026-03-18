@@ -6,7 +6,7 @@
 And go to **Firebase Console → Storage → Rules** and set:
 ```
   <application
-        android:label="start"
+        android:label="startinder"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
