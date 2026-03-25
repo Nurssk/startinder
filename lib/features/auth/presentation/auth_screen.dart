@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'home_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -69,19 +71,43 @@ class _AuthScreenState extends State<AuthScreen> {
   // 🔥 GOOGLE SIGN IN
   Future<void> signInWithGoogle() async {
     try {
-      final GoogleAuthProvider googleProvider = GoogleAuthProvider();
-      final credential =
-          await FirebaseAuth.instance.signInWithPopup(googleProvider);
+      UserCredential userCredential;
 
-      final uid = credential.user!.uid;
+      if (kIsWeb) {
+        // ✅ Web — popup
+        final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+        userCredential =
+            await FirebaseAuth.instance.signInWithPopup(googleProvider);
+      } else {
+        // ✅ Mobile — google_sign_in ^6.2.1
+        final GoogleSignIn googleSignIn = GoogleSignIn(
+          scopes: ['email', 'profile'],
+        );
+        final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+        if (googleUser == null) return;
+
+        final GoogleSignInAuthentication googleAuth =
+            await googleUser.authentication;
+
+        final oauthCredential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        userCredential =
+            await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      }
+
+      // ✅ Create Firestore doc if first time
+      final uid = userCredential.user!.uid;
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
       if (!doc.exists) {
         await FirebaseFirestore.instance.collection('users').doc(uid).set({
-          'fullName': credential.user!.displayName ?? '',
-          'email': credential.user!.email ?? '',
-          'photoUrl': credential.user!.photoURL ?? '',
+          'fullName': userCredential.user!.displayName ?? '',
+          'email': userCredential.user!.email ?? '',
+          'photoUrl': userCredential.user!.photoURL ?? '',
           'bio': '',
           'role': '',
           'team': '',
@@ -177,7 +203,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       style: TextStyle(color: Colors.white54),
                     ),
                     const SizedBox(height: 30),
-
                     if (!isLogin) ...[
                       _buildTextField(
                         controller: nameController,
@@ -186,15 +211,12 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                       const SizedBox(height: 16),
                     ],
-
                     _buildTextField(
                       controller: emailController,
                       hint: "Email",
                       icon: Icons.email_outlined,
                     ),
-
                     const SizedBox(height: 16),
-
                     _buildTextField(
                       controller: passwordController,
                       hint: "Password",
@@ -202,8 +224,6 @@ class _AuthScreenState extends State<AuthScreen> {
                       obscure: obscurePassword,
                       isPassword: true,
                     ),
-
-                    // ✅ Forgot password — only on login
                     if (isLogin) ...[
                       const SizedBox(height: 8),
                       Align(
@@ -225,10 +245,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ],
-
                     const SizedBox(height: 24),
-
-                    // Main button
                     SizedBox(
                       width: double.infinity,
                       height: 55,
@@ -256,10 +273,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 20),
-
-                    // Google button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -280,10 +294,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 20),
-
-                    // ✅ Toggle login/register
                     Center(
                       child: TextButton(
                         onPressed: () => setState(() => isLogin = !isLogin),
@@ -295,7 +306,6 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 40),
                   ],
                 ),

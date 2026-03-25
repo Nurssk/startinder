@@ -95,7 +95,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: fieldColor,
                 border: Border.all(color: neonGreen, width: 1.5),
               ),
-              child: const Icon(Icons.person, color: Colors.white54, size: 20),
+              child: const Icon(Icons.person,
+                  color: Color.fromARGB(255, 255, 255, 255), size: 20),
             ),
             const SizedBox(width: 10),
             Column(
