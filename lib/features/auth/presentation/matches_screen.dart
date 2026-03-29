@@ -21,6 +21,7 @@ class MatchesScreen extends StatelessWidget {
         backgroundColor: backgroundColor,
         centerTitle: true,
         elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text(
           "Matches",
           style: TextStyle(
@@ -89,7 +90,7 @@ class MatchesScreen extends StatelessWidget {
                         color: cardColor,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: neonGreen.withOpacity(0.15), width: 1),
+                            color: neonGreen.withValues(alpha: 0.15), width: 1),
                       ),
                       child: Row(
                         children: [
@@ -142,7 +143,7 @@ class MatchesScreen extends StatelessWidget {
                             width: 38,
                             height: 38,
                             decoration: BoxDecoration(
-                              color: neonGreen.withOpacity(0.1),
+                              color: neonGreen.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Icon(Icons.chat_bubble_outline,
@@ -174,7 +175,8 @@ class MatchesScreen extends StatelessWidget {
               shape: BoxShape.circle,
               color: const Color(0xFF1A1C22),
               border: Border.all(
-                  color: const Color(0xFF8CF23C).withOpacity(0.3), width: 2),
+                  color: const Color(0xFF8CF23C).withValues(alpha: 0.3),
+                  width: 2),
             ),
             child: const Icon(Icons.chat_bubble_outline,
                 color: Colors.white24, size: 38),
@@ -205,7 +207,8 @@ class MatchesScreen extends StatelessWidget {
               color: const Color(0xFF1A1C22),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                  color: const Color(0xFF8CF23C).withOpacity(0.3), width: 1),
+                  color: const Color(0xFF8CF23C).withValues(alpha: 0.3),
+                  width: 1),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
